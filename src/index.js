@@ -2,59 +2,97 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
 const app = new Hono()
+
+// NoppoStudioの各サービスから呼び出せるようにCORSを許可
 app.use('*', cors())
 
-// ランダムな文字列を生成する関数
+/**
+ * ランダムな文字列を生成 (読み間違いを防ぐため 0, O, 1, I は除外)
+ */
 const generateRandomText = (length = 5) => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 読み間違いやすい 0, O, 1, I は除外
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   let result = ''
+  const randomValues = new Uint32Array(length)
+  crypto.getRandomValues(randomValues)
   for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
+    result += chars.charAt(randomValues[i] % chars.length)
   }
   return result
 }
 
-// 文字を歪ませたSVGを生成する関数
+/**
+ * 文字を強力に歪ませたSVGを生成する
+ */
 const createSVG = (text) => {
   const width = 150
   const height = 50
   let letters = ''
 
-  // 1文字ずつ配置して、ランダムに回転・移動させる
+  // 1. 文字の配置（回転・縮小・歪み・上下のズレ）
   for (let i = 0; i < text.length; i++) {
-    const x = 20 + i * 25
-    const y = 35
-    const rotate = Math.floor(Math.random() * 40) - 20 // -20度〜20度の回転
-    letters += `<text x="${x}" y="${y}" font-family="Arial, sans-serif" font-weight="bold" font-size="30" fill="#0070FF" transform="rotate(${rotate}, ${x}, ${y})">${text[i]}</text>`
+    const x = 15 + i * 26 
+    const y = 35 + (Math.random() * 8 - 4) // 上下の揺らぎを強化
+    
+    const rotate = Math.floor(Math.random() * 50) - 25 // -25度〜25度
+    const scale = 0.85 + Math.random() * 0.3 // 85%〜115%
+    const skewX = Math.floor(Math.random() * 24) - 12 // 斜めの歪みを強化
+
+    // 文字ごとに微妙に透明度を変えてさらに複雑にする
+    const opacity = 0.8 + Math.random() * 0.2
+
+    letters += `
+      <text x="${x}" y="${y}" 
+            font-family="'Georgia', serif" 
+            font-weight="bold" 
+            font-size="32" 
+            fill="#0070FF" 
+            fill-opacity="${opacity}"
+            transform="scale(${scale}) rotate(${rotate}, ${x}, ${y}) skewX(${skewX})">
+        ${text[i]}
+      </text>
+    `
   }
 
-  // ノイズ（邪魔な線）を入れてボットをかく乱する
-  let noiseLines = ''
+  // 2. 邪魔なノイズ（ベジェ曲線）
+  let noise = ''
   for (let i = 0; i < 3; i++) {
-    noiseLines += `<line x1="${Math.random() * width}" y1="${Math.random() * height}" x2="${Math.random() * width}" y2="${Math.random() * height}" stroke="#0070FF" stroke-width="1" opacity="0.5" />`
+    const coords = Array.from({ length: 8 }, () => Math.random() * 150)
+    noise += `<path d="M ${coords[0]} ${coords[1]} C ${coords[2]} ${coords[3]}, ${coords[4]} ${coords[5]}, ${coords[6]} ${coords[7]}" 
+                stroke="#0070FF" stroke-width="1.5" fill="none" opacity="0.3" />`
+  }
+
+  // 3. ランダムなドットノイズ
+  for (let i = 0; i < 15; i++) {
+    const dotX = Math.random() * width
+    const dotY = Math.random() * height
+    noise += `<circle cx="${dotX}" cy="${dotY}" r="1" fill="#0070FF" opacity="0.4" />`
   }
 
   return `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="rgba(255,255,255,0.1)" rx="10" />
-      ${noiseLines}
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" fill="rgba(0,112,255,0.05)" rx="10" />
+      ${noise}
       ${letters}
     </svg>
   `.trim()
 }
 
-// --- エンドポイント ---
+// --- エンドポイント設定 ---
 
+// CAPTCHA生成
 app.get('/captcha/generate', (c) => {
   const text = generateRandomText()
   const svg = createSVG(text)
   
-  // 本来は text をKVなどに保存して後で照合するけど、
-  // まずは表示確認用にJSONで「正解」と一緒に返してみる
+  // フロントエンドで答え合わせができるようにJSONで返す
+  // 本番運用ではSessionやKVに保存して照合するのがセーフティだぜ
   return c.json({
     svg: svg,
-    answer: text // 開発中はこれを見てテストできるぜ
+    answer: text
   })
 })
+
+// ヘルスチェック用
+app.get('/', (c) => c.text('NoppoTools API is active.'))
 
 export default app
