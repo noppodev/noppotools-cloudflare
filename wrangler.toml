@@ -1,0 +1,6 @@
+name = "noppo-tools"
+main = "src/index.js"
+compatibility_date = "2026-04-02"
+
+[observability]
+enabled = true
